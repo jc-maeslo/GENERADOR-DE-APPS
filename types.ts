@@ -25,6 +25,14 @@ export interface CourseModule {
   title: string;
   content: string; // Markdown supported
   imageKeyword: string;
+  imageUrl?: string; // Base64 data URI
+  keyPoints?: string[];
+  miniQuiz?: {
+    question: string;
+    options: string[];
+    correctAnswerIndex: number;
+    explanation?: string;
+  };
 }
 
 export interface Course {
@@ -38,3 +46,4 @@ export interface Course {
 }
 
 export type AppStep = 'INPUT' | 'PILLARS' | 'VARIATIONS' | 'COURSE';
+export type ImageSize = '1K' | '2K' | '4K';

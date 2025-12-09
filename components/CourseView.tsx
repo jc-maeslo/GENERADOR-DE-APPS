@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Course } from '../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { BookOpen, BarChart2, CheckCircle, ChevronLeft, Award, ExternalLink } from 'lucide-react';
+import { BookOpen, BarChart2, CheckCircle, ChevronLeft, Award, ExternalLink, Download, ChevronDown, ChevronUp, Lightbulb, HelpCircle, XCircle } from 'lucide-react';
 
 interface CourseViewProps {
   course: Course;
@@ -13,8 +13,14 @@ const COLORS = ['#4f46e5', '#818cf8', '#c7d2fe', '#312e81', '#6366f1'];
 const CourseView: React.FC<CourseViewProps> = ({ course, onBack }) => {
   const [activeTab, setActiveTab] = useState<'content' | 'data' | 'quiz'>('content');
   const [activeModuleIndex, setActiveModuleIndex] = useState(0);
+  
+  // State for Final Quiz
   const [quizAnswers, setQuizAnswers] = useState<number[]>(new Array(course.quiz.length).fill(-1));
   const [showQuizResults, setShowQuizResults] = useState(false);
+
+  // State for Interactive Elements per Module
+  const [expandedKeyPoints, setExpandedKeyPoints] = useState<Record<number, boolean>>({});
+  const [miniQuizStates, setMiniQuizStates] = useState<Record<number, { selected: number | null, submitted: boolean }>>({});
 
   const handleQuizSelect = (questionIndex: number, optionIndex: number) => {
     if (showQuizResults) return;
@@ -31,6 +37,35 @@ const CourseView: React.FC<CourseViewProps> = ({ course, onBack }) => {
     return score;
   };
 
+  const handleDownload = () => {
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(course, null, 2));
+    const downloadAnchorNode = document.createElement('a');
+    downloadAnchorNode.setAttribute("href", dataStr);
+    downloadAnchorNode.setAttribute("download", `${course.title.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.json`);
+    document.body.appendChild(downloadAnchorNode);
+    downloadAnchorNode.click();
+    downloadAnchorNode.remove();
+  };
+
+  const toggleKeyPoints = (idx: number) => {
+    setExpandedKeyPoints(prev => ({ ...prev, [idx]: !prev[idx] }));
+  };
+
+  const handleMiniQuizSelect = (moduleIdx: number, optionIdx: number) => {
+    if (miniQuizStates[moduleIdx]?.submitted) return;
+    setMiniQuizStates(prev => ({
+      ...prev,
+      [moduleIdx]: { ...prev[moduleIdx], selected: optionIdx, submitted: false }
+    }));
+  };
+
+  const submitMiniQuiz = (moduleIdx: number) => {
+    setMiniQuizStates(prev => ({
+      ...prev,
+      [moduleIdx]: { ...prev[moduleIdx], submitted: true }
+    }));
+  };
+
   const activeModule = course.modules[activeModuleIndex];
 
   return (
@@ -40,13 +75,24 @@ const CourseView: React.FC<CourseViewProps> = ({ course, onBack }) => {
         <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-700 rounded-full mix-blend-multiply filter blur-3xl opacity-30 -mr-16 -mt-16"></div>
         <div className="absolute bottom-0 left-0 w-64 h-64 bg-pink-600 rounded-full mix-blend-multiply filter blur-3xl opacity-20 -ml-16 -mb-16"></div>
         
-        <button 
-          onClick={onBack}
-          className="relative z-10 flex items-center text-indigo-200 hover:text-white mb-4 transition-colors group"
-        >
-          <ChevronLeft className="w-4 h-4 mr-1 group-hover:-translate-x-1 transition-transform" />
-          Volver a variaciones
-        </button>
+        <div className="relative z-10 flex justify-between items-start mb-4">
+            <button 
+              onClick={onBack}
+              className="flex items-center text-indigo-200 hover:text-white transition-colors group"
+            >
+              <ChevronLeft className="w-4 h-4 mr-1 group-hover:-translate-x-1 transition-transform" />
+              Volver a variaciones
+            </button>
+
+            <button
+                onClick={handleDownload}
+                className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded-lg text-sm font-medium transition-all backdrop-blur-sm border border-white/10"
+                title="Descargar curso en JSON"
+            >
+                <Download className="w-4 h-4" />
+                <span className="hidden sm:inline">Descargar</span>
+            </button>
+        </div>
         
         <div className="relative z-10">
           <h1 className="text-3xl font-bold mb-2 leading-tight">{course.title}</h1>
@@ -81,7 +127,7 @@ const CourseView: React.FC<CourseViewProps> = ({ course, onBack }) => {
           }`}
         >
           <Award className="w-5 h-5" />
-          Evaluación
+          Evaluación Final
         </button>
       </div>
 
@@ -113,22 +159,122 @@ const CourseView: React.FC<CourseViewProps> = ({ course, onBack }) => {
 
             {/* Module Detail */}
             <div className="lg:w-3/4 animate-fade-in">
-              <div className="relative h-64 w-full rounded-2xl overflow-hidden mb-8 shadow-md">
-                <img 
-                  src={`https://picsum.photos/seed/${activeModule.imageKeyword + activeModuleIndex}/800/400`} 
-                  alt={activeModule.title} 
-                  className="w-full h-full object-cover"
-                />
+              <div className="relative h-64 w-full rounded-2xl overflow-hidden mb-8 shadow-md bg-slate-100">
+                {activeModule.imageUrl ? (
+                  <img 
+                    src={activeModule.imageUrl} 
+                    alt={activeModule.title} 
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                   <div className="w-full h-full flex items-center justify-center text-slate-400">
+                     <span className="text-sm">Imagen no disponible</span>
+                   </div>
+                )}
                 <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-end">
                   <h2 className="text-white text-2xl font-bold p-6">{activeModule.title}</h2>
                 </div>
               </div>
+
+              {/* Collapsible Key Points Section */}
+              {activeModule.keyPoints && activeModule.keyPoints.length > 0 && (
+                <div className="mb-8 border border-indigo-100 rounded-xl overflow-hidden bg-indigo-50/50">
+                  <button 
+                    onClick={() => toggleKeyPoints(activeModuleIndex)}
+                    className="w-full flex items-center justify-between p-4 text-left hover:bg-indigo-50 transition-colors"
+                  >
+                    <div className="flex items-center gap-2 text-indigo-800 font-semibold">
+                      <Lightbulb className="w-5 h-5 text-amber-500" />
+                      <span>Puntos Clave del Módulo</span>
+                    </div>
+                    {expandedKeyPoints[activeModuleIndex] ? (
+                      <ChevronUp className="w-5 h-5 text-indigo-400" />
+                    ) : (
+                      <ChevronDown className="w-5 h-5 text-indigo-400" />
+                    )}
+                  </button>
+                  
+                  {expandedKeyPoints[activeModuleIndex] && (
+                    <div className="p-4 pt-0 animate-fade-in">
+                      <ul className="space-y-2 mt-2">
+                        {activeModule.keyPoints.map((point, i) => (
+                          <li key={i} className="flex items-start gap-2 text-sm text-slate-700 bg-white p-3 rounded-lg border border-indigo-50 shadow-sm">
+                            <span className="font-bold text-indigo-400 select-none">•</span>
+                            {point}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
               
               <div className="prose prose-indigo max-w-none prose-headings:font-bold prose-p:text-slate-600 prose-li:text-slate-600">
                 <div dangerouslySetInnerHTML={{ 
                   __html: activeModule.content.replace(/\n/g, '<br/>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') 
                 }} />
               </div>
+
+              {/* Embedded Mini Quiz */}
+              {activeModule.miniQuiz && (
+                <div className="mt-10 bg-white border border-slate-200 rounded-xl p-6 shadow-sm ring-1 ring-slate-100">
+                  <div className="flex items-center gap-2 mb-4">
+                    <HelpCircle className="w-5 h-5 text-indigo-500" />
+                    <h3 className="font-bold text-lg text-slate-800">Repaso Rápido</h3>
+                  </div>
+                  
+                  <p className="text-slate-700 mb-4 font-medium">{activeModule.miniQuiz.question}</p>
+                  
+                  <div className="space-y-2">
+                    {activeModule.miniQuiz.options.map((option, idx) => {
+                      const state = miniQuizStates[activeModuleIndex] || { selected: null, submitted: false };
+                      const isSelected = state.selected === idx;
+                      const isCorrect = activeModule.miniQuiz!.correctAnswerIndex === idx;
+                      const showResult = state.submitted;
+                      
+                      let style = "border-slate-200 hover:border-indigo-300 hover:bg-slate-50";
+                      
+                      if (showResult) {
+                         if (isCorrect) style = "border-green-500 bg-green-50 text-green-700";
+                         else if (isSelected) style = "border-red-300 bg-red-50 text-red-700";
+                         else style = "border-slate-100 opacity-60";
+                      } else if (isSelected) {
+                        style = "border-indigo-500 bg-indigo-50 text-indigo-700 ring-1 ring-indigo-500";
+                      }
+
+                      return (
+                        <button
+                          key={idx}
+                          onClick={() => handleMiniQuizSelect(activeModuleIndex, idx)}
+                          disabled={showResult}
+                          className={`w-full text-left p-3 rounded-lg border transition-all flex items-center justify-between text-sm ${style}`}
+                        >
+                          <span>{option}</span>
+                          {showResult && isCorrect && <CheckCircle className="w-4 h-4 text-green-600" />}
+                          {showResult && isSelected && !isCorrect && <XCircle className="w-4 h-4 text-red-500" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {!miniQuizStates[activeModuleIndex]?.submitted ? (
+                     <button
+                       onClick={() => submitMiniQuiz(activeModuleIndex)}
+                       disabled={miniQuizStates[activeModuleIndex]?.selected === undefined}
+                       className="mt-4 bg-indigo-600 text-white text-sm px-4 py-2 rounded-lg font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                     >
+                       Verificar Respuesta
+                     </button>
+                  ) : (
+                    activeModule.miniQuiz.explanation && (
+                      <div className="mt-4 p-3 bg-slate-50 rounded-lg text-sm text-slate-600 border border-slate-100">
+                        <span className="font-bold text-slate-700 block mb-1">Explicación:</span>
+                        {activeModule.miniQuiz.explanation}
+                      </div>
+                    )
+                  )}
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -138,7 +284,7 @@ const CourseView: React.FC<CourseViewProps> = ({ course, onBack }) => {
           <div className="max-w-4xl mx-auto animate-fade-in">
              <div className="bg-slate-50 p-8 rounded-2xl border border-slate-100 shadow-sm">
                 <h2 className="text-2xl font-bold text-slate-800 mb-2">{course.chartTitle || "Datos Relevantes"}</h2>
-                <p className="text-slate-500 mb-8">Análisis visual basado en datos reales del sector.</p>
+                <p className="text-slate-500 mb-8">Análisis visual basado en datos reales del sector (Google Search).</p>
                 
                 <div className="h-96 w-full">
                   <ResponsiveContainer width="100%" height="100%">
@@ -159,7 +305,7 @@ const CourseView: React.FC<CourseViewProps> = ({ course, onBack }) => {
                   </ResponsiveContainer>
                 </div>
                 <div className="mt-6 text-sm text-slate-400 text-center">
-                   Fuente: Datos agregados vía Google Search
+                   Fuente: Datos agregados vía Google Search Grounding
                 </div>
              </div>
           </div>
@@ -169,8 +315,8 @@ const CourseView: React.FC<CourseViewProps> = ({ course, onBack }) => {
         {activeTab === 'quiz' && (
            <div className="max-w-2xl mx-auto animate-fade-in pb-12">
              <div className="text-center mb-8">
-               <h2 className="text-2xl font-bold text-slate-800">Pon a prueba tu conocimiento</h2>
-               <p className="text-slate-500">Responde estas preguntas breves para validar lo aprendido.</p>
+               <h2 className="text-2xl font-bold text-slate-800">Evaluación Final</h2>
+               <p className="text-slate-500">Responde estas preguntas breves para validar lo aprendido en todo el curso.</p>
              </div>
 
              <div className="space-y-8">

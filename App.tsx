@@ -1,13 +1,15 @@
 import React, { useState } from 'react';
-import { Loader2, Sparkles, Layers, BookOpen, ChevronRight, GraduationCap } from 'lucide-react';
-import { generatePillars, generateVariations, generateCourseContent } from './services/geminiService';
-import { Pillar, LessonVariation, Course, AppStep } from './types';
+import { Loader2, Sparkles, Layers, BookOpen, ChevronRight, GraduationCap, Image as ImageIcon, Check } from 'lucide-react';
+import { generatePillars, generateVariations, generateCourseContent, generateModuleImage } from './services/geminiService';
+import { Pillar, LessonVariation, Course, AppStep, ImageSize } from './types';
 import CourseView from './components/CourseView';
 
 function App() {
   const [step, setStep] = useState<AppStep>('INPUT');
   const [isLoading, setIsLoading] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState("");
   const [topic, setTopic] = useState('');
+  const [imageSize, setImageSize] = useState<ImageSize>('1K');
   
   // Data State
   const [pillars, setPillars] = useState<Pillar[]>([]);
@@ -23,6 +25,7 @@ function App() {
     if (!topic.trim()) return;
     
     setIsLoading(true);
+    setLoadingMessage("Investigando tendencias y generando pilares...");
     setSources([]);
     try {
       const { pillars: generatedPillars, sources: src } = await generatePillars(topic);
@@ -41,6 +44,7 @@ function App() {
   const handleSelectPillar = async (pillar: Pillar) => {
     setSelectedPillar(pillar);
     setIsLoading(true);
+    setLoadingMessage("Diseñando variaciones de lecciones creativas...");
     setSources([]);
     try {
       const { variations: generatedVariations, sources: src } = await generateVariations(topic, pillar.title);
@@ -57,13 +61,34 @@ function App() {
 
   // STEP 3: Generate Course
   const handleSelectVariation = async (variation: LessonVariation) => {
+    // Check API Key for Image Gen (Veo/Imagen requirement)
+    if (window.aistudio) {
+      const hasKey = await window.aistudio.hasSelectedApiKey();
+      if (!hasKey) {
+        await window.aistudio.openSelectKey();
+        // Assuming success as per race condition guidelines
+      }
+    }
+
     setSelectedVariation(variation);
     setIsLoading(true);
     setSources([]);
+    
     try {
       if (!selectedPillar) return;
+
+      // 1. Generate Text Content
+      setLoadingMessage("Redactando contenido, gráficos y quiz...");
       const courseData = await generateCourseContent(topic, selectedPillar.title, variation.title);
-      setCourse(courseData);
+      
+      // 2. Generate Images
+      setLoadingMessage(`Generando imágenes (${imageSize}) con IA...`);
+      const modulesWithImages = await Promise.all(courseData.modules.map(async (mod) => {
+        const imageUrl = await generateModuleImage(mod.title, mod.imageKeyword, imageSize);
+        return { ...mod, imageUrl };
+      }));
+
+      setCourse({ ...courseData, modules: modulesWithImages });
       setStep('COURSE');
     } catch (error) {
       console.error("Error generating course:", error);
@@ -80,14 +105,15 @@ function App() {
 
   // UI Components
   const LoadingOverlay = () => (
-    <div className="fixed inset-0 bg-white/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center p-4">
-      <div className="bg-white p-8 rounded-2xl shadow-xl border border-indigo-100 flex flex-col items-center max-w-sm w-full">
-        <Loader2 className="w-12 h-12 text-indigo-600 animate-spin mb-4" />
-        <h3 className="text-xl font-bold text-slate-800 mb-2">Trabajando en tu estrategia...</h3>
-        <p className="text-slate-500 text-center text-sm">
-          {step === 'INPUT' && "Analizando tendencias y generando pilares temáticos."}
-          {step === 'PILLARS' && "Diseñando lecciones específicas y creativas."}
-          {step === 'VARIATIONS' && "Redactando contenido, diseñando gráficos y creando el quiz."}
+    <div className="fixed inset-0 bg-white/90 backdrop-blur-md z-50 flex flex-col items-center justify-center p-4">
+      <div className="bg-white p-8 rounded-2xl shadow-2xl border border-indigo-100 flex flex-col items-center max-w-sm w-full text-center">
+        <div className="relative mb-6">
+            <div className="absolute inset-0 bg-indigo-200 rounded-full blur-xl opacity-50 animate-pulse"></div>
+            <Loader2 className="w-16 h-16 text-indigo-600 animate-spin relative z-10" />
+        </div>
+        <h3 className="text-xl font-bold text-slate-800 mb-2">Creando tu Curso</h3>
+        <p className="text-slate-500 text-sm font-medium animate-pulse">
+          {loadingMessage}
         </p>
       </div>
     </div>
@@ -144,8 +170,9 @@ function App() {
                 </div>
               </form>
               
-              <div className="mt-8 text-center text-sm text-slate-400">
-                <p>Powered by Gemini 2.5 Flash & Google Search</p>
+              <div className="mt-8 text-center text-sm text-slate-400 flex flex-col items-center gap-1">
+                <p>Powered by <strong>Gemini 2.5 Flash</strong> (Search Grounding)</p>
+                <p>& <strong>Gemini 3 Pro Image</strong> (Generación Visual)</p>
               </div>
             </div>
           )}
@@ -185,14 +212,34 @@ function App() {
           {/* STEP 2: VARIATIONS */}
           {step === 'VARIATIONS' && (
             <div className="animate-fade-in">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                  <BookOpen className="w-5 h-5 text-indigo-500" />
-                  Paso 2: Elige una Lección
-                </h2>
-                <div className="flex flex-col items-end">
-                   <span className="text-xs text-slate-400 uppercase tracking-wide">Pilar Seleccionado</span>
-                   <span className="text-sm font-medium text-indigo-700">{selectedPillar?.title}</span>
+              <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">
+                <div>
+                    <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                    <BookOpen className="w-5 h-5 text-indigo-500" />
+                    Paso 2: Elige una Lección
+                    </h2>
+                     <p className="text-xs text-slate-400 mt-1">Pilar: <span className="font-medium text-slate-600">{selectedPillar?.title}</span></p>
+                </div>
+                
+                {/* Image Quality Selector */}
+                <div className="flex items-center gap-2 bg-white px-3 py-2 rounded-lg border border-slate-200 shadow-sm">
+                    <ImageIcon className="w-4 h-4 text-indigo-500" />
+                    <span className="text-sm font-medium text-slate-600">Calidad:</span>
+                    <div className="flex bg-slate-100 rounded-md p-0.5">
+                        {(['1K', '2K', '4K'] as ImageSize[]).map((size) => (
+                            <button
+                                key={size}
+                                onClick={() => setImageSize(size)}
+                                className={`px-2 py-0.5 text-xs font-bold rounded-md transition-all ${
+                                    imageSize === size 
+                                    ? 'bg-white text-indigo-600 shadow-sm' 
+                                    : 'text-slate-400 hover:text-slate-600'
+                                }`}
+                            >
+                                {size}
+                            </button>
+                        ))}
+                    </div>
                 </div>
               </div>
 
@@ -212,7 +259,7 @@ function App() {
                         </h3>
                     </div>
                     <div className="mt-4 flex items-center text-sm text-indigo-600 font-medium opacity-0 group-hover:opacity-100 transition-opacity">
-                        Crear Curso <ChevronRight className="w-4 h-4 ml-1" />
+                        Crear Curso ({imageSize}) <ChevronRight className="w-4 h-4 ml-1" />
                     </div>
                   </button>
                 ))}
